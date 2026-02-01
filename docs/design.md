@@ -1,6 +1,6 @@
 # Design Document: Event Ingestion Platform
 
-Part 4 (Design Exercise) – no code. Covers: avoiding global hotspots, exposing SLOs to Product/Business, and protecting the system from misbehaving tenants.
+Design considerations for: avoiding global hotspots, exposing SLOs to Product/Business, protecting the system from misbehaving tenants, and horizontal scaling.
 
 ---
 
@@ -95,6 +95,63 @@ flowchart LR
 
 ---
 
+## 4. Async Event Processing & Horizontal Scaling
+
+**Current Implementation: BullMQ**
+
+The event ingestion pipeline uses BullMQ (Redis-backed queue) for async processing:
+
+1. `POST /events` validates the payload and enqueues a job → returns `202 Accepted` immediately
+2. Background workers (`EventsProcessor`) consume jobs and batch-insert into PostgreSQL
+3. Workers retry failed jobs automatically (3 attempts with exponential backoff)
+
+```mermaid
+flowchart LR
+  Client[Client] -->|POST /events| API[API Server]
+  API -->|Add job| Queue[(Redis Queue)]
+  API -->|202 Accepted| Client
+  Queue --> W1[Worker 1]
+  Queue --> W2[Worker 2]
+  Queue --> W3[Worker N...]
+  W1 --> DB[(PostgreSQL)]
+  W2 --> DB
+  W3 --> DB
+```
+
+**Benefits of async processing:**
+
+- **Decoupled latency:** HTTP response time is independent of DB write time
+- **Natural back-pressure:** Queue absorbs traffic spikes; workers process at sustainable rate
+- **Fault tolerance:** If DB is temporarily slow/down, jobs remain in queue and are retried
+- **Visibility:** Job status, failures, and retries are trackable in Redis
+
+**Horizontal Scaling of Workers**
+
+Workers can be scaled horizontally to increase event processing throughput:
+
+| Scaling Approach | How | Trade-offs |
+|------------------|-----|------------|
+| **Multiple worker processes** | Run N instances of the app (each has a worker) | Simple; each instance competes for jobs. Redis handles distribution. |
+| **Dedicated worker nodes** | Separate deployment for workers (no HTTP server) | API and workers scale independently; better resource isolation. |
+| **Concurrency per worker** | Configure BullMQ `concurrency` option (e.g. 5-10 jobs in parallel per worker) | Higher throughput per instance; watch for DB connection pool exhaustion. |
+| **Auto-scaling** | Scale worker pods/containers based on queue depth (e.g. Kubernetes HPA on Redis queue length) | Handles variable load; requires monitoring queue metrics. |
+
+**Scaling considerations:**
+
+- **DB connection limits:** Each worker uses connections from the pool. With N workers × M concurrency, ensure `max` pool size can handle it (or use PgBouncer).
+- **Redis throughput:** BullMQ is efficient, but very high job rates may need Redis cluster or tuning.
+- **Idempotency:** Workers should handle duplicate delivery gracefully (e.g. `orIgnore()` on `event_id` conflict).
+- **Ordering:** BullMQ does not guarantee strict ordering across workers. If ordering matters, partition by `account_id` or use a single worker per partition.
+
+**Future improvements:**
+
+- **Separate worker deployment:** Extract `EventsProcessor` into a standalone service for independent scaling
+- **Priority queues:** High-priority accounts get processed first
+- **Dead-letter queue (DLQ):** Jobs that fail all retries go to a DLQ for manual inspection
+- **Metrics:** Expose queue depth, processing rate, and failure rate to Prometheus/Grafana
+
+---
+
 ## Summary
 
 | Concern | Approach |
@@ -102,3 +159,4 @@ flowchart LR
 | Global hotspots | Sharding by account, per-account rate limits, per-account cache, optional read replicas for large accounts |
 | SLOs for Product/Business | SLIs (latency, error rate, availability); target SLOs (e.g. 99.9%, P99 &lt; 500 ms); dashboards, error budget, alerts, reports |
 | Misbehaving tenants | Per-account rate limits, quotas, optional per-account circuit breaker, cost-based back-pressure; client sees 429/503/504 and Retry-After |
+| Async processing & scaling | BullMQ for async event ingestion; horizontal scaling via multiple workers, concurrency tuning, or auto-scaling on queue depth |
