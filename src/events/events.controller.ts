@@ -1,5 +1,5 @@
-import { Body, Controller, Post, HttpStatus, Res, UseGuards, UseInterceptors } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { Body, Controller, Post, HttpStatus, Res, UseInterceptors } from '@nestjs/common';
+// import { ThrottlerGuard } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import type { Response } from 'express';
@@ -8,7 +8,7 @@ import { CreateEventsBatchDto } from './dto/create-event.dto';
 import type { EventsJobData } from './events.processor';
 
 @Controller()
-@UseGuards(ThrottlerGuard)
+// @UseGuards(ThrottlerGuard)  // DISABLED for load testing
 @UseInterceptors(new TimeoutInterceptor(15_000))
 export class EventsController {
   constructor(

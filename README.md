@@ -51,6 +51,8 @@ Uses batches of 5,000; progress is logged every 50k events.
 
 **Prerequisites:** [k6](https://k6.io/docs/getting-started/installation/) installed. App and DB/Redis running.
 
+> **Note:** Disable the rate limiter before running load tests to avoid 429 errors. Comment out `@UseGuards(ThrottlerGuard)` in `src/events/events.controller.ts` and `src/accounts/accounts.controller.ts`.
+
 ```bash
 # Default base URL: http://localhost:3000
 k6 run scripts/load/baseline.js
@@ -192,6 +194,8 @@ curl "http://localhost:3000/accounts/acc_123/summary?window=last_7d"
 ```
 
 ## Baseline vs Improved Performance
+
+> **Note:** The unoptimized baseline code is available on branch [`feat/without-optimizations`](https://github.com/your-repo/tree/feat/without-optimizations).
 
 | Change | What | Why | Trade-off |
 |--------|------|-----|-----------|

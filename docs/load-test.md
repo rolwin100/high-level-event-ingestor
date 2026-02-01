@@ -7,6 +7,7 @@
 - Database seeded: `npm run seed` (1M+ events)
 - k6 installed
 - htop installed
+- **Rate limiter disabled:** Comment out `@UseGuards(ThrottlerGuard)` in `src/events/events.controller.ts` and `src/accounts/accounts.controller.ts` to avoid 429 errors during high-load tests
 
 ## Running the Load Test
 
@@ -31,6 +32,8 @@
 ---
 
 ## Baseline Results (Without Optimizations)
+
+> **Note:** The baseline code (without optimizations) is available on branch [`feat/without-optimizations`](https://github.com/your-repo/tree/feat/without-optimizations).
 
 **Optimizations disabled:**
 - Rate limiting (ThrottlerGuard)
@@ -98,19 +101,50 @@
 
 ---
 
-## After Optimizations
+## After Optimizations - 50 req/sec
 
-Run the same test with optimizations enabled (current app).
+Results with all optimizations enabled:
+- **Async queue (BullMQ):** POST /events returns 202 immediately
+- **Denormalized tables:** Pre-aggregated summary data
+- **Redis cache:** 60s TTL for summaries
+- **Batch inserts + retries**
 
-| Metric | Before | After |
-|--------|--------|-------|
-| **Throughput** | _____ req/s | _____ req/s |
-| **P50 latency** | _____ ms | _____ ms |
-| **P90 latency** | _____ ms | _____ ms |
-| **P95 latency** | _____ ms | _____ ms |
-| **Error rate** | _____ % | _____ % |
-| **CPU (Node)** | _____ % | _____ % |
-| **Memory (Node)** | _____ MB | _____ MB |
+| Metric | Before (Baseline) | After (Optimized) | Improvement |
+|--------|-------------------|-------------------|-------------|
+| **Throughput** | 49.51 req/s | 49.60 req/s | Same |
+| **P50 latency** | 14.59 ms | 2.0 ms | **7.3x faster** |
+| **P90 latency** | 19.14 ms | 2.92 ms | **6.6x faster** |
+| **P95 latency** | 20.71 ms | 3.54 ms | **5.8x faster** |
+| **Max latency** | 251.22 ms | 37.56 ms | **6.7x faster** |
+| **Error rate** | 0% | 0% | Same |
+| **Dropped iterations** | 5 | 0 | **No drops** |
+| **CPU (Node)** | 43% | 54% - 60% (makes sense because additional proceesing was added)| *(observe via htop)* |
+
+### Checks (Optimized)
+
+| Endpoint | Passed | Failed |
+|----------|--------|--------|
+| POST /events (202 queued) | 2100 | 0 |
+| GET /accounts/:id/summary (200) | 901 | 0 |
+| **Total** | 3001 | 0 |
+
+### Improvements Observed
+
+- [x] **~7x latency reduction** across all percentiles
+- [x] **Max latency spikes eliminated** (251ms → 37ms)
+- [x] **No dropped iterations** (k6 keeps up with target rate)
+- [x] **Immediate response** for POST /events (async queue)
+- [x] **Fast reads** from denormalized tables + cache
+
+---
+
+## Summary
+
+| Configuration | P50 Latency | P95 Latency | Max Latency | Dropped |
+|---------------|-------------|-------------|-------------|---------|
+| Baseline @ 15 req/s | 35.11 ms | 50.8 ms | 91.35 ms | 0 |
+| Baseline @ 50 req/s | 14.59 ms | 20.71 ms | 251.22 ms | 5 |
+| **Optimized @ 50 req/s** | **2.0 ms** | **3.54 ms** | **37.56 ms** | **0** |
 
 ---
 
@@ -122,4 +156,5 @@ Run the same test with optimizations enabled (current app).
 |------|-----------|----------|-------|----------|----------|
 | Baseline @ 15 req/s | 10/s | 5/s | 15/s | 60s | ~900 |
 | Baseline @ 50 req/s | 35/s | 15/s | 50/s | 60s | ~3000 |
+| Optimized @ 50 req/s | 35/s | 15/s | 50/s | 60s | ~3000 |
 

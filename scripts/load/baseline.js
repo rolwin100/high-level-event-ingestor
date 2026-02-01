@@ -1,9 +1,12 @@
 /**
- * Baseline load test: POST /events (batch) and GET /accounts/:id/summary.
+ * Load test: POST /events (async queue) and GET /accounts/:id/summary.
  * Usage: k6 run scripts/load/baseline.js
  * Requires: k6 (https://k6.io/docs/getting-started/installation/)
  *
  * Current config: 50 req/sec (35 POST + 15 GET) for 60s = ~3000 requests total.
+ *
+ * POST /events returns 202 Accepted (events queued for async processing).
+ * GET /accounts/:id/summary reads from denormalized tables + Redis cache.
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -58,7 +61,7 @@ export function postEvents() {
   const res = http.post(`${BASE_URL}/events`, body, {
     headers: { 'Content-Type': 'application/json' },
   });
-  check(res, { 'POST /events status 201 or 207': (r) => r.status === 201 || r.status === 207 });
+  check(res, { 'POST /events status 202 (queued)': (r) => r.status === 202 });
   sleep(0.5);
 }
 
