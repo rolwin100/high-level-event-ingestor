@@ -608,3 +608,48 @@ scrape_configs:
 3. Deploy Prometheus + Grafana (or use managed service)
 4. Create SLO dashboard
 5. Configure alerting rules
+
+---
+
+## Appendix C: Key Numbers & Sizing
+
+### Measured Performance
+
+| Metric | Baseline | Optimized | Improvement |
+|--------|----------|-----------|-------------|
+| P50 Latency | 14.59 ms | 2.0 ms | 7.3x |
+| P95 Latency | 20.71 ms | 3.54 ms | 5.8x |
+| Max Latency | 251 ms | 37.56 ms | 6.7x |
+| Throughput | 50 req/s | 50 req/s | — |
+
+### Capacity Numbers
+
+| Parameter | Value | How We Got It |
+|-----------|-------|---------------|
+| Events/second | 350 | 35 POST/s × 10 events/batch |
+| Events/day | 30M | 350 × 86,400 seconds |
+| Rate limit (IP) | 500 req/min | Normal load (200-500) with no margin cut |
+| Rate limit (account) | 100 events/min | 21K capacity ÷ 500 accounts × 2.4 burst factor |
+| Connection pool | 20 | 1 worker + 5 API + 14 buffer |
+| Cache TTL | 60s | Analytics tolerance; ~50% hit rate |
+| Error budget | 43 min/month | 0.1% of 43,200 minutes |
+
+### Scaling Formulas
+
+```
+Throughput:     workers × 350 events/s
+Pool size:      (workers × concurrency) + api_connections + buffer
+Queue buffer:   (spike_rate - process_rate) × spike_duration
+Storage/day:    events × 200 bytes = ~6 GB
+Error budget:   (1 - SLO) × minutes_in_month
+```
+
+### When to Scale
+
+| Trigger | Action |
+|---------|--------|
+| Queue depth > 10K sustained | Add workers |
+| P95 > 100ms | Check DB, add cache, or add read replicas |
+| Connection pool exhausted | Increase pool or add PgBouncer |
+| Storage > 500GB/month | Consider partitioning |
+| One account > 1K events/min | Route to dedicated shard |
