@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Event } from '../events/entities/event.entity';
 import { CacheService } from '../common/cache/cache.service';
-// import { withRetry } from '../common/retry/retry.util';  // DISABLED for baseline test
+import { withRetry } from '../common/retry/retry.util';
 import { SummaryWindow } from './dto/summary-query.dto';
 
 export interface AccountSummaryDto {
@@ -34,14 +34,14 @@ export class AccountsService {
   }
 
   async getSummary(accountId: string, window: SummaryWindow = 'last_24h'): Promise<AccountSummaryDto> {
-    // BASELINE: No cache, no retry - direct DB query
-    // const cached = await this.cache.getSummary(accountId, window);
-    // if (cached) {
-    //   return JSON.parse(cached) as AccountSummaryDto;
-    // }
+    // Check cache first
+    const cached = await this.cache.getSummary(accountId, window);
+    if (cached) {
+      return JSON.parse(cached) as AccountSummaryDto;
+    }
 
-    const result = await this.computeSummary(accountId, window);
-    // await this.cache.setSummary(accountId, window, JSON.stringify(result));  // DISABLED
+    const result = await withRetry(() => this.computeSummary(accountId, window));
+    await this.cache.setSummary(accountId, window, JSON.stringify(result));
     return result;
   }
 

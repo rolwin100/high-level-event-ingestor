@@ -1,13 +1,13 @@
-import { Body, Controller, Post, HttpStatus, Res } from '@nestjs/common';
-// import { ThrottlerGuard } from '@nestjs/throttler';
+import { Body, Controller, Post, HttpStatus, Res, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
-// import { TimeoutInterceptor } from '../common/timeout/timeout.interceptor';
+import { TimeoutInterceptor } from '../common/timeout/timeout.interceptor';
 import { EventsService } from './events.service';
 import { CreateEventsBatchDto } from './dto/create-event.dto';
 
 @Controller()
-// @UseGuards(ThrottlerGuard)  // DISABLED for baseline test
-// @UseInterceptors(new TimeoutInterceptor(15_000))  // DISABLED for baseline test
+@UseGuards(ThrottlerGuard)
+@UseInterceptors(new TimeoutInterceptor(15_000))
 export class EventsController {
   constructor(private readonly eventsService: EventsService) {}
 

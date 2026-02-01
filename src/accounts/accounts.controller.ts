@@ -1,12 +1,12 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-// import { ThrottlerGuard } from '@nestjs/throttler';
-// import { TimeoutInterceptor } from '../common/timeout/timeout.interceptor';
+import { Controller, Get, Param, Query, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { TimeoutInterceptor } from '../common/timeout/timeout.interceptor';
 import { AccountsService } from './accounts.service';
 import type { SummaryWindow } from './dto/summary-query.dto';
 
 @Controller('accounts')
-// @UseGuards(ThrottlerGuard)  // DISABLED for baseline test
-// @UseInterceptors(new TimeoutInterceptor(15_000))  // DISABLED for baseline test
+@UseGuards(ThrottlerGuard)
+@UseInterceptors(new TimeoutInterceptor(15_000))
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
