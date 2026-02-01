@@ -8,6 +8,7 @@ import { Event } from './events/entities/event.entity';
 import { EventsModule } from './events/events.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CacheModule } from './common/cache/cache.module';
+import { QueueModule } from './common/queue/queue.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CacheModule } from './common/cache/cache.module';
       },
     ]),
     CacheModule,
+    QueueModule,
     TypeOrmModule.forRootAsync({
       useFactory: () => ({
         type: 'postgres',
