@@ -159,7 +159,7 @@ curl "http://localhost:3000/accounts/sample?limit=5"
 
 ### GET /accounts/:id/summary
 
-Returns an aggregated view for the account. Uses Redis caching (60s TTL).
+Returns an aggregated view for the account. Uses **denormalized tables** for fast reads with Redis caching (60s TTL).
 
 **Query:** `?window=last_24h` or `last_7d` (default: `last_24h`).
 
@@ -196,14 +196,39 @@ curl "http://localhost:3000/accounts/acc_123/summary?window=last_7d"
 | Change | What | Why | Trade-off |
 |--------|------|-----|-----------|
 | **Async processing (BullMQ)** | POST /events queues jobs for background processing | Immediate 202 response; decouples HTTP latency from DB writes; handles spikes gracefully. | Events not immediately visible; requires Redis for queue. |
+| **Denormalized summary tables** | Pre-aggregated `account_summary` and `account_top_users` tables | O(days) query instead of O(events); sub-ms reads for hot paths. | Slightly slower writes; eventually consistent. |
 | **Indexes** | Composite on `(account_id, timestamp)` and `(account_id, user_id, timestamp)` | Summary and top-users queries use indexes; avoids full scans. | Slightly slower writes; negligible at this scale. |
 | **Batch writes** | Single bulk `INSERT` for POST /events instead of per-event save | One round-trip; less lock contention. | Large batches can hit DB limits; we use client batch size. |
 | **Redis cache** | GET /accounts/:id/summary cached by `account_id` + `window`, TTL 60s | Repeated summary reads served from Redis; DB load and latency drop. | Data up to 60s stale; acceptable for analytics. |
 | **Connection pooling** | TypeORM `extra.max: 20`, `idleTimeoutMillis`, `connectionTimeoutMillis` | Bounded connections; avoids exhaustion under spikes. | Tuning needed for higher concurrency. |
-| **Summary aggregation in DB** | GROUP BY type and user_id instead of loading all events | No large in-memory aggregation; scales with event count. | N/A. |
 
 **Before (baseline):** Per-event insert; synchronous processing; summary loaded all events in memory; no cache.  
-**After:** Async queue (BullMQ); bulk insert; summary via GROUP BY; Redis cache; pooling. Re-run the same k6 script to compare P50/P95 and throughput.
+**After:** Async queue (BullMQ); bulk insert; denormalized tables for hot summary paths; Redis cache; pooling. Re-run the same k6 script to compare P50/P95 and throughput.
+
+## Denormalized Tables (Hot Summary Paths)
+
+To optimize the read-heavy summary endpoint, we maintain **denormalized tables** that are updated incrementally when events are processed:
+
+### Tables
+
+| Table | Primary Key | Purpose |
+|-------|-------------|---------|
+| `account_summary` | `(account_id, date, event_type)` | Daily event counts by type per account |
+| `account_top_users` | `(account_id, date, user_id)` | Daily event counts per user per account |
+
+### How It Works
+
+1. **Write path:** When events are processed by the BullMQ worker, counts are aggregated by `(account_id, date, type)` and `(account_id, date, user_id)` and upserted into the denormalized tables.
+
+2. **Read path:** GET /accounts/:id/summary first queries the denormalized tables (fast SUM over days). If no data is found, it falls back to aggregating raw events.
+
+3. **Response includes `source`:** The API response includes a `source` field (`denormalized` or `aggregation`) for debugging.
+
+### Benefits
+
+- **O(days) vs O(events):** Querying 7 rows (one per day) is much faster than scanning millions of events.
+- **Graceful fallback:** Accounts without denormalized data still work via event aggregation.
+- **Eventually consistent:** Summaries update shortly after events are processed.
 
 ## Reliability Patterns Implemented
 
@@ -212,10 +237,15 @@ curl "http://localhost:3000/accounts/acc_123/summary?window=last_7d"
    - **How:** Events are processed by background workers with automatic retries (3 attempts, exponential backoff).
    - **Benefits:** HTTP response is immediate (202); DB write failures don't block clients; natural load leveling during spikes.
 
-2. **Timeouts and retries with backoff**
+2. **Denormalized tables with graceful fallback**
+   - **Where:** GET /accounts/:id/summary reads from pre-aggregated `account_summary` and `account_top_users` tables.
+   - **How:** If denormalized data is unavailable (e.g., new account, table error), falls back to raw event aggregation.
+   - **Benefits:** Fast reads (O(days) vs O(events)); system remains functional even if denormalization fails.
+
+3. **Timeouts and retries with backoff**
    - DB path for POST /events (insert) and GET /accounts/:id/summary (aggregation) have timeouts and retries. A helper function (`withRetry`) implements exponential backoff (100ms, 200ms, 400ms, max 3 retries). Helpful during high load.
 
-3. **Rate limiting**
+4. **Rate limiting**
    - **Where:** POST /events and GET /accounts/:id/summary via `ThrottlerGuard` (global limit per IP).
    - **How:** 500 requests per minute per IP (configurable in `AppModule`).
    - **Slow DB / spike:** Excess requests get 429 Too Many Requests; client should back off and retry with `Retry-After` (if we add the header).

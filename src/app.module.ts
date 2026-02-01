@@ -5,6 +5,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { Event } from './events/entities/event.entity';
+import { AccountSummary } from './accounts/entities/account-summary.entity';
+import { AccountTopUsers } from './accounts/entities/account-top-users.entity';
 import { EventsModule } from './events/events.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CacheModule } from './common/cache/cache.module';
@@ -26,7 +28,7 @@ import { QueueModule } from './common/queue/queue.module';
       useFactory: () => ({
         type: 'postgres',
         url: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/event_ingestion',
-        entities: [Event],
+        entities: [Event, AccountSummary, AccountTopUsers],
         synchronize: true, // use migrations in production
         logging: process.env.NODE_ENV === 'development',
         extra: {
