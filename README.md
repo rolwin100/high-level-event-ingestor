@@ -37,12 +37,12 @@ write-heavy event ingestion and read-heavy account summaries, with performance a
 
 ## How to Run the Seed Script
 
-Generate 1–5M events (default 1M). Requires PostgreSQL running (e.g. `docker-compose up -d`).
+Generate 1–5M events (default 1M). The system has been tested with 5M events. Requires PostgreSQL running (e.g. `docker-compose up -d`).
 
 ```bash
-pnpm run seed
-# or with a custom count (e.g. 2M):
-npx tsx scripts/seed-events.ts 2000000
+pnpm run seed 5000000
+# or with a custom count (e.g. 5M):
+npx tsx scripts/seed-events.ts 5000000
 ```
 
 Uses batches of 5,000; progress is logged every 50k events.

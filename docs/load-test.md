@@ -4,10 +4,14 @@
 
 - App running: `pnpm run start:dev`
 - PostgreSQL and Redis running: `docker-compose up -d`
-- Database seeded: `npm run seed` (1M+ events)
+- Database seeded: `pnpm run seed 50000000` (1M+ events, tested with 5M)
 - k6 installed
 - htop installed
 - **Rate limiter disabled:** Comment out `@UseGuards(ThrottlerGuard)` in `src/events/events.controller.ts` and `src/accounts/accounts.controller.ts` to avoid 429 errors during high-load tests
+
+## Dataset Size
+
+The system has been tested with **5 million events**. The optimizations (async queue, denormalized tables, Redis cache) maintain consistent performance at this scale.
 
 ## Running the Load Test
 
